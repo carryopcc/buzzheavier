@@ -1,12 +1,11 @@
-import re
+from fastapi import FastAPI, Request, Form
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 from requests import get
-from fastapi import FastAPI
-from pydantic import BaseModel
+import re
 
 app = FastAPI()
-
-class URLInput(BaseModel):
-    text: str
+templates = Jinja2Templates(directory="templates")
 
 def get_buzzheavier_url(bh_link):
     bh_link = bh_link.strip().split("#")[0]
@@ -20,21 +19,31 @@ def get_buzzheavier_url(bh_link):
     r = get(bh_link + "/download", headers=headers, timeout=20)
     return r.headers.get("Hx-Redirect")
 
-@app.post("/extract")
-def extract_links(data: URLInput):
-    urls = re.findall(r'https?://buzzheavier\.com/\S+', data.text)
-    direct_links = []
-    failed = []
+@app.get("/", response_class=HTMLResponse)
+def home(request: Request):
+    return templates.TemplateResponse(
+        "index.html",
+        {"request": request, "results": None}
+    )
 
-    for u in urls:
+@app.post("/extract", response_class=HTMLResponse)
+def extract(request: Request, urls: str = Form(...)):
+    found_urls = re.findall(r'https?://buzzheavier\.com/\S+', urls)
+    results = []
+
+    for u in found_urls:
         try:
             dl = get_buzzheavier_url(u)
             if not dl:
-                raise Exception("No redirect")
-            direct_links.append(dl)
+                raise Exception()
+            results.append(dl)
         except:
-            failed.append(u)
+            results.append(f"FAILED: {u}")
 
+    return templates.TemplateResponse(
+        "index.html",
+        {"request": request, "results": results}
+    )
     return {
         "success": direct_links,
         "failed": failed
